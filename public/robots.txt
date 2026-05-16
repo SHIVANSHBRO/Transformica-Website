@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://transformica.com/sitemap.xml
