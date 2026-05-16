@@ -3004,9 +3004,47 @@ function FitnessTestPage() {
       else if (score <= 14) { level = "Intermediate"; plan = "Transformica Pro"; rec = 62; }
       else { level = "Advanced"; plan = "Transformica Pro Max"; rec = 81; }
       const nextResult = { score, level, plan, rec, goal: questions[1].opts[newAnswers[1]] };
+      setAnswers(newAnswers);
+      setSelected(null);
       setResult(nextResult);
       saveFitnessResult(nextResult);
     }
+  };
+
+  const reset = () => {
+    setStep(0);
+    setAnswers([]);
+    setSelected(null);
+    setResult(null);
+    setGoal("");
+  };
+
+  const QUESTION_LABELS = [
+    "Exercise frequency",
+    "Primary goal",
+    "Diet quality",
+    "Sleep per night",
+    "Stress level",
+    "Workout time/day",
+    "Equipment access",
+  ];
+
+  const buildWhatsAppMessage = () => {
+    const answerLines = answers.map((a, i) => `${i + 1}. ${QUESTION_LABELS[i]}: ${questions[i].opts[a]}`).join("\n");
+    return [
+      "Hi Coach! I just completed the Transformica Fitness Test.",
+      "",
+      "*MY RESULTS*",
+      `• Level: ${result.level}`,
+      `• Score: ${result.score}/18`,
+      `• Detected Goal: ${result.goal}`,
+      `• Recommended Plan: ${result.plan}`,
+      "",
+      "*MY ANSWERS*",
+      answerLines,
+      "",
+      `I'd like to get started with the ${result.plan} plan. Please guide me through the next steps!`,
+    ].join("\n");
   };
 
   const radarData = result ? [
@@ -3098,7 +3136,9 @@ function FitnessTestPage() {
             </div>
 
             <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
-              <Btn onClick={() => window.open(WHATSAPP_URL, "_blank")}>Start My {result.plan} Plan <ArrowRight size={16} /></Btn>
+              <Btn onClick={() => window.open(waWithMessage(buildWhatsAppMessage()), "_blank")}>
+                Start My {result.plan} Plan on WhatsApp <ArrowRight size={16} />
+              </Btn>
               <Btn variant="outline" onClick={reset}>Retake Test</Btn>
             </div>
           </div>
