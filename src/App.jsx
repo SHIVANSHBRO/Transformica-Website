@@ -150,20 +150,13 @@ const STYLES = `
     box-shadow: 0 35px 70px rgba(28, 42, 94, 0.18), 0 8px 20px rgba(28, 42, 94, 0.08) !important;
   }
 
+  /* ─── Mobile-first orbit scaling (used by spinOrbit keyframes) ─── */
+  /* The keyframes use a fixed translateX(110px). On mobile we scale the whole
+     container down so the orbit fits and stays visible. */
+
   /* ─── Responsive layouts ─── */
-  @media (max-width: 400px) {
-    .nav-logo-text { display: none !important; }
-  }
-  @media (max-width: 767px) {
-    .wa-text { display: none !important; }
-    .r-grid-2 { grid-template-columns: 1fr !important; gap: 24px !important; }
-    .features-3d-col { grid-template-columns: 1fr !important; }
-    .trans-grid    { grid-template-columns: 1fr !important; }
-    .footer-grid   { grid-template-columns: 1fr !important; gap: 32px !important; }
-  }
   @media (max-width: 1023px) {
-    .hero-orbit { display: none !important; }
-    .r-grid-hero   { grid-template-columns: 1fr !important; gap: 40px !important; }
+    .r-grid-hero   { grid-template-columns: 1fr !important; gap: 28px !important; }
     .r-grid-support { grid-template-columns: 1fr !important; gap: 40px !important; }
     .r-grid-analytics { grid-template-columns: 1fr !important; gap: 32px !important; }
     .r-grid-app    { grid-template-columns: 1fr !important; gap: 40px !important; }
@@ -201,7 +194,50 @@ const STYLES = `
     .dual-strip > div:nth-child(2) {
       margin: 0 auto;
     }
+    /* Shrink the hero orbit instead of hiding it */
+    .hero-orbit { transform: scale(0.72); transform-origin: center; }
   }
+
+  @media (max-width: 767px) {
+    .wa-text { display: none !important; }
+    .r-grid-2 { grid-template-columns: 1fr !important; gap: 20px !important; }
+    .features-3d-col { grid-template-columns: 1fr !important; }
+    .trans-grid    { grid-template-columns: 1fr !important; }
+    .footer-grid   { grid-template-columns: 1fr !important; gap: 28px !important; }
+
+    /* Hero: keep orbit visible but smaller and below the headline */
+    .hero-orbit { transform: scale(0.62); margin-top: -20px; }
+    .hero-title { font-size: clamp(38px, 11vw, 56px) !important; letter-spacing: 1.5px !important; line-height: 1.02 !important; }
+    .hero-sub { font-size: 15px !important; line-height: 1.6 !important; }
+    .hero-stats { gap: 18px !important; flex-wrap: wrap !important; margin-top: 28px !important; }
+    .hero-stat-num { font-size: 22px !important; }
+
+    /* Section headers */
+    .section-h1 { font-size: clamp(30px, 8vw, 44px) !important; letter-spacing: 1.5px !important; line-height: 1.05 !important; }
+    .section-h2 { font-size: clamp(26px, 7.5vw, 40px) !important; letter-spacing: 1px !important; line-height: 1.1 !important; }
+
+    /* Sections get tighter padding on phones */
+    .r-section { padding-left: 16px !important; padding-right: 16px !important; padding-top: 56px !important; padding-bottom: 56px !important; }
+
+    /* Stack button rows */
+    .r-btn-row { flex-direction: column !important; align-items: stretch !important; gap: 10px !important; }
+    .r-btn-row > * { width: 100% !important; justify-content: center !important; }
+
+    /* Generic 2-up / 3-up card grids */
+    .r-cards-2, .r-cards-3, .r-cards-auto { grid-template-columns: 1fr !important; gap: 16px !important; }
+
+    /* Tighten card padding */
+    .r-card { padding: 20px !important; }
+  }
+
+  @media (max-width: 400px) {
+    .nav-logo-text { display: none !important; }
+    .hero-orbit { transform: scale(0.52); margin-top: -32px; }
+  }
+
+  /* Prevent horizontal overflow from large glow orbs / animations */
+  html, body { overflow-x: hidden; max-width: 100%; }
+  img { max-width: 100%; height: auto; }
 `;
 
 /* ─────────────────────────── UTILITY COMPONENTS ─────────────────────── */
@@ -311,8 +347,8 @@ function SectionHeader({ label, title, sub }) {
   return (
     <div style={{ textAlign: "center", marginBottom: 56 }}>
       <span style={{ fontSize: 12, letterSpacing: 4, color: C.cyan, textTransform: "uppercase", fontWeight: 700 }}>{label}</span>
-      <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: "clamp(38px,5vw,64px)", letterSpacing: 3, marginTop: 8, lineHeight: 1 }}>{title}</h2>
-      {sub && <p style={{ color: C.textMuted, marginTop: 12, maxWidth: 540, margin: "12px auto 0", lineHeight: 1.7 }}>{sub}</p>}
+      <h2 className="section-h2" style={{ fontFamily: "'Playfair Display', serif", fontSize: "clamp(34px,5vw,64px)", letterSpacing: 3, marginTop: 8, lineHeight: 1.05 }}>{title}</h2>
+      {sub && <p style={{ color: C.textMuted, marginTop: 12, maxWidth: 540, margin: "12px auto 0", lineHeight: 1.7, padding: "0 16px" }}>{sub}</p>}
     </div>
   );
 }
@@ -890,8 +926,8 @@ function HomePage({ testimonials, transformations }) {
               }}>
                 Your Complete Health & Fitness Ecosystem
               </div>
-              <h1 style={{
-                fontFamily: "'Playfair Display', serif", fontSize: "clamp(52px,7vw,92px)",
+              <h1 className="hero-title" style={{
+                fontFamily: "'Playfair Display', serif", fontSize: "clamp(48px,7vw,92px)",
                 lineHeight: 0.95, letterSpacing: 4, marginBottom: 24,
                 animation: "fadeUp 0.7s ease both 0.1s",
                 textShadow: `0 0 40px rgba(0,200,255,0.4), 0 0 80px rgba(0,200,255,0.15)`,
@@ -904,19 +940,19 @@ function HomePage({ testimonials, transformations }) {
                   WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
                 }}>LIFE.</span>
               </h1>
-              <p style={{
+              <p className="hero-sub" style={{
                 color: C.textMuted, fontSize: 17, lineHeight: 1.7, maxWidth: 460,
                 marginBottom: 36, animation: "fadeUp 0.7s ease both 0.2s",
               }}>
                 Human expert guidance fused with AI-powered analytics. Transformica helps you achieve your dream physique and peak performance — scientifically, sustainably.
               </p>
-              <div style={{ display: "flex", gap: 14, flexWrap: "wrap", animation: "fadeUp 0.7s ease both 0.3s" }}>
+              <div className="r-btn-row" style={{ display: "flex", gap: 14, flexWrap: "wrap", animation: "fadeUp 0.7s ease both 0.3s" }}>
                 <Btn onClick={() => window.open(WHATSAPP_URL, "_blank")}>Contact Us <ArrowRight size={16} /></Btn>
               </div>
-              <div style={{ display: "flex", gap: 32, marginTop: 40, animation: "fadeUp 0.7s ease both 0.4s" }}>
+              <div className="hero-stats" style={{ display: "flex", gap: 32, marginTop: 40, animation: "fadeUp 0.7s ease both 0.4s" }}>
                 {[["5000+", "Members"], ["94%", "Success Rate"], ["12+", "Experts"]].map(([n, l]) => (
                   <div key={l}>
-                    <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 28, color: C.cyan, letterSpacing: 2 }}>{n}</div>
+                    <div className="hero-stat-num" style={{ fontFamily: "'Playfair Display', serif", fontSize: 28, color: C.cyan, letterSpacing: 2 }}>{n}</div>
                     <div style={{ fontSize: 12, color: C.textMuted, letterSpacing: 1, textTransform: "uppercase" }}>{l}</div>
                   </div>
                 ))}
