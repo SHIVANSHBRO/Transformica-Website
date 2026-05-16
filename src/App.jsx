@@ -11,6 +11,7 @@ import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis
 } from "recharts";
+import { supabase, PRODUCT_IMAGE_BUCKET } from "./supabase";
 import LogoImage from "../Transformica New logo.png";
 import AppUiImage from "../Transformica App UI.webp";
 import AppUi2Image from "../App Ui 2.webp";
@@ -281,25 +282,25 @@ function saveFitnessResult(result) {
   }
 }
 
-function Btn({ children, variant = "primary", onClick, style = {} }) {
+function Btn({ children, variant = "primary", onClick, style = {}, disabled = false }) {
   const base = {
     padding: "13px 28px", borderRadius: "8px", fontFamily: "'Outfit', sans-serif",
-    fontWeight: 700, fontSize: 14, cursor: "pointer", letterSpacing: "1px",
+    fontWeight: 700, fontSize: 14, cursor: disabled ? "not-allowed" : "pointer", letterSpacing: "1px",
     textTransform: "uppercase", transition: "all 0.3s", border: "none",
-    display: "inline-flex", alignItems: "center", gap: 8, ...style,
+    display: "inline-flex", alignItems: "center", gap: 8, opacity: disabled ? 0.55 : 1, ...style,
   };
   if (variant === "primary") return (
-    <button className="shimmer-btn" onClick={onClick}
+    <button className="shimmer-btn" onClick={onClick} disabled={disabled}
       style={{ ...base, color: "#fff" }}
-      onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 8px 30px rgba(0,200,255,0.5)"; }}
+      onMouseEnter={e => { if (disabled) return; e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 8px 30px rgba(0,200,255,0.5)"; }}
       onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = ""; }}>
       {children}
     </button>
   );
   return (
-    <button onClick={onClick}
+    <button onClick={onClick} disabled={disabled}
       style={{ ...base, background: "transparent", border: `2px solid ${C.cyan}`, color: C.cyan }}
-      onMouseEnter={e => { e.currentTarget.style.background = "rgba(0,200,255,0.1)"; e.currentTarget.style.transform = "translateY(-2px)"; }}
+      onMouseEnter={e => { if (disabled) return; e.currentTarget.style.background = "rgba(0,200,255,0.1)"; e.currentTarget.style.transform = "translateY(-2px)"; }}
       onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.transform = ""; }}>
       {children}
     </button>
@@ -2164,45 +2165,96 @@ const DEFAULT_SUPPLEMENTS = [
   { id: "other-006", name: "Collagen Boost", brand: "Vital Proteins", price: "₹2,199", category: "Others", tag: "Beauty", color: C.green, image: null, flavours: ["Unflavoured", "Lemon", "Berry"], benefits: ["Skin support", "Joint health", "Hair strength", "Recovery"] },
 ];
 
-/* ─── Supplement store (localStorage-backed) ─── */
-const SUPPLEMENT_STORAGE_KEY = "tx_supplements_v1";
+/* ─── Supplement store (Supabase-backed) ─── */
+const rowToProduct = (r) => ({
+  id: r.id,
+  name: r.name,
+  brand: r.brand,
+  price: r.price,
+  category: r.category,
+  tag: r.tag || "",
+  color: r.color,
+  image: r.image_url || null,
+  flavours: r.flavours || [],
+  benefits: r.benefits || [],
+});
 
-function loadSavedSupplements() {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = localStorage.getItem(SUPPLEMENT_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    // Fall back to defaults if data is malformed or empty
-    if (!Array.isArray(parsed) || parsed.length === 0) return null;
-    // Sanity-check shape; if first item is missing essentials, treat as corrupt
-    const first = parsed[0];
-    if (!first || typeof first !== "object" || !first.name || !first.category) return null;
-    return parsed;
-  } catch { return null; }
-}
-
-function saveSupplements(items) {
-  try { localStorage.setItem(SUPPLEMENT_STORAGE_KEY, JSON.stringify(items)); } catch (e) { console.warn("Supplement save failed", e); }
-}
+const productToRow = (p) => ({
+  id: p.id,
+  name: p.name,
+  brand: p.brand,
+  price: p.price,
+  category: p.category,
+  tag: p.tag || null,
+  color: p.color,
+  image_url: p.image || null,
+  flavours: p.flavours || [],
+  benefits: p.benefits || [],
+});
 
 function useSupplementsStore() {
-  const [items, setItems] = useState(() => loadSavedSupplements() || DEFAULT_SUPPLEMENTS);
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  const persist = (next) => { setItems(next); saveSupplements(next); };
-
-  return {
-    items,
-    add: (product) => persist([...items, { ...product, id: product.id || `prod-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` }]),
-    update: (id, patch) => persist(items.map((p) => (p.id === id ? { ...p, ...patch } : p))),
-    remove: (id) => persist(items.filter((p) => p.id !== id)),
-    reset: () => persist(DEFAULT_SUPPLEMENTS),
+  const refresh = async () => {
+    const { data, error } = await supabase
+      .from("products")
+      .select("*")
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true });
+    if (error) { setError(error.message); setLoading(false); return; }
+    setItems((data || []).map(rowToProduct));
+    setError(null);
+    setLoading(false);
   };
+
+  useEffect(() => {
+    refresh();
+    const channel = supabase
+      .channel("products-changes")
+      .on("postgres_changes", { event: "*", schema: "public", table: "products" }, () => refresh())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
+  const add = async (product) => {
+    const id = product.id || `prod-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const { error } = await supabase.from("products").insert(productToRow({ ...product, id }));
+    if (error) throw error;
+    await refresh();
+  };
+
+  const update = async (id, patch) => {
+    const { error } = await supabase.from("products").update(productToRow({ ...patch, id })).eq("id", id);
+    if (error) throw error;
+    await refresh();
+  };
+
+  const remove = async (id) => {
+    const { error } = await supabase.from("products").delete().eq("id", id);
+    if (error) throw error;
+    await refresh();
+  };
+
+  return { items, loading, error, add, update, remove, refresh };
+}
+
+/* ─── Auth hook ─── */
+function useAuth() {
+  const [session, setSession] = useState(null);
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => { setSession(data.session); setReady(true); });
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
+    return () => sub.subscription.unsubscribe();
+  }, []);
+  return { session, ready };
 }
 
 function SupplementsPage() {
   const [category, setCategory] = useState(SUPPLEMENT_CATEGORIES[0]);
-  const { items } = useSupplementsStore();
+  const { items, loading, error } = useSupplementsStore();
   const filtered = items.filter((s) => s.category === category);
 
   const productMessage = (s) =>
@@ -2237,7 +2289,15 @@ function SupplementsPage() {
             ))}
           </div>
 
-          {filtered.length === 0 ? (
+          {loading ? (
+            <div style={{ textAlign: "center", padding: "80px 0", color: C.textMuted }}>
+              Loading products…
+            </div>
+          ) : error ? (
+            <div style={{ textAlign: "center", padding: "80px 0", color: "#ff6b8a" }}>
+              Couldn't load products: {error}
+            </div>
+          ) : filtered.length === 0 ? (
             <div style={{ textAlign: "center", padding: "80px 0", color: C.textMuted }}>
               No products in this category yet.
             </div>
@@ -2351,11 +2411,58 @@ const EMPTY_PRODUCT = {
 };
 
 function SupplementsAdminPage() {
+  const { session, ready } = useAuth();
+  if (!ready) return <div style={{ paddingTop: 140, textAlign: "center", color: C.textMuted }}>Loading…</div>;
+  if (!session) return <AdminLogin />;
+  return <SupplementsAdminPageInner />;
+}
+
+function AdminLogin() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [err, setErr] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setBusy(true); setErr(null);
+    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    if (error) setErr(error.message);
+    setBusy(false);
+  };
+
+  const inputStyle = {
+    width: "100%", padding: "12px 14px", borderRadius: 8,
+    background: "rgba(255,255,255,0.04)", border: `1px solid ${C.border}`,
+    color: C.textPrimary, fontSize: 14, fontFamily: "'Outfit', sans-serif", outline: "none",
+    marginBottom: 14,
+  };
+
+  return (
+    <div style={{ paddingTop: 140, minHeight: "100vh" }}>
+      <div style={{ maxWidth: 420, margin: "0 auto", padding: "0 20px" }}>
+        <div style={{ fontSize: 12, letterSpacing: 4, color: C.cyan, textTransform: "uppercase", fontWeight: 700, marginBottom: 8 }}>Admin</div>
+        <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: 36, marginBottom: 8 }}>Sign in</h1>
+        <p style={{ color: C.textMuted, fontSize: 14, marginBottom: 28 }}>Access the Supplement Manager.</p>
+        <form onSubmit={submit}>
+          <input style={inputStyle} type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" />
+          <input style={inputStyle} type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="current-password" />
+          {err && <div style={{ color: "#ff6b8a", fontSize: 13, marginBottom: 14 }}>{err}</div>}
+          <Btn onClick={submit} disabled={busy}>{busy ? "Signing in…" : "Sign in"}</Btn>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function SupplementsAdminPageInner() {
   const store = useSupplementsStore();
   const [editing, setEditing] = useState(null); // null | "new" | productId
   const [filterCat, setFilterCat] = useState("All");
   const [form, setForm] = useState(EMPTY_PRODUCT);
   const [flavInput, setFlavInput] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const fileRef = useRef(null);
 
   const startNew = () => {
@@ -2375,29 +2482,53 @@ function SupplementsAdminPage() {
   };
   const cancel = () => { setEditing(null); setForm(EMPTY_PRODUCT); setFlavInput(""); };
 
-  const save = () => {
+  const signOut = async () => { await supabase.auth.signOut(); };
+
+  const save = async () => {
     if (!form.name.trim() || !form.brand.trim() || !form.price.trim()) {
       alert("Name, Brand and Price are required.");
       return;
     }
     const cleanBenefits = form.benefits.map((b) => b.trim()).filter(Boolean);
     const productData = { ...form, benefits: cleanBenefits, flavours: form.flavours.filter(Boolean) };
-    if (editing === "new") store.add(productData);
-    else store.update(editing, productData);
-    cancel();
+    setSaving(true);
+    try {
+      if (editing === "new") await store.add(productData);
+      else await store.update(editing, productData);
+      cancel();
+    } catch (e) {
+      alert("Save failed: " + (e.message || e));
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleImage = (e) => {
+  const handleImage = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 800 * 1024) {
-      alert("Image too large. Please use a file under 800 KB. Tip: compress at tinypng.com first.");
+    if (file.size > 5 * 1024 * 1024) {
+      alert("Image too large. Please use a file under 5 MB.");
       e.target.value = "";
       return;
     }
-    const reader = new FileReader();
-    reader.onload = (ev) => setForm((f) => ({ ...f, image: ev.target.result }));
-    reader.readAsDataURL(file);
+    setUploading(true);
+    try {
+      const ext = file.name.split(".").pop().toLowerCase();
+      const path = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+      const { error: upErr } = await supabase.storage.from(PRODUCT_IMAGE_BUCKET).upload(path, file, {
+        cacheControl: "3600",
+        upsert: false,
+        contentType: file.type,
+      });
+      if (upErr) throw upErr;
+      const { data } = supabase.storage.from(PRODUCT_IMAGE_BUCKET).getPublicUrl(path);
+      setForm((f) => ({ ...f, image: data.publicUrl }));
+    } catch (err) {
+      alert("Upload failed: " + (err.message || err));
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
   };
 
   const addFlavour = () => {
@@ -2439,9 +2570,7 @@ function SupplementsAdminPage() {
             </div>
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
               <Btn onClick={startNew}><Plus size={15} /> Add Product</Btn>
-              <Btn variant="outline" onClick={() => { if (confirm("Reset all products to defaults? This will erase your custom changes.")) store.reset(); }}>
-                Reset to Defaults
-              </Btn>
+              <Btn variant="outline" onClick={signOut}><LogOut size={14} /> Sign out</Btn>
             </div>
           </div>
 
@@ -2480,8 +2609,8 @@ function SupplementsAdminPage() {
                   </div>
                   <div style={{ flex: 1, minWidth: 220 }}>
                     <input ref={fileRef} type="file" accept="image/*" onChange={handleImage} style={{ display: "none" }} />
-                    <Btn variant="outline" onClick={() => fileRef.current?.click()}>
-                      <Camera size={14} /> {form.image ? "Replace" : "Upload"} Image
+                    <Btn variant="outline" onClick={() => fileRef.current?.click()} disabled={uploading}>
+                      <Camera size={14} /> {uploading ? "Uploading…" : form.image ? "Replace Image" : "Upload Image"}
                     </Btn>
                     {form.image && (
                       <button onClick={() => setForm((f) => ({ ...f, image: null }))}
@@ -2590,8 +2719,10 @@ function SupplementsAdminPage() {
 
               {/* Save / Cancel */}
               <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
-                <Btn variant="outline" onClick={cancel}>Cancel</Btn>
-                <Btn onClick={save}>{editing === "new" ? "Add Product" : "Save Changes"}</Btn>
+                <Btn variant="outline" onClick={cancel} disabled={saving}>Cancel</Btn>
+                <Btn onClick={save} disabled={saving || uploading}>
+                  {saving ? "Saving…" : editing === "new" ? "Add Product" : "Save Changes"}
+                </Btn>
               </div>
             </div>
           )}
@@ -2642,7 +2773,10 @@ function SupplementsAdminPage() {
                       style={{ flex: 1, padding: "6px 10px", borderRadius: 6, border: `1px solid ${C.cyan}40`, background: `${C.cyan}10`, color: C.cyan, cursor: "pointer", fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase" }}>
                       Edit
                     </button>
-                    <button onClick={() => { if (confirm(`Delete "${p.name}"?`)) store.remove(p.id); }}
+                    <button onClick={async () => {
+                        if (!confirm(`Delete "${p.name}"?`)) return;
+                        try { await store.remove(p.id); } catch (e) { alert("Delete failed: " + (e.message || e)); }
+                      }}
                       style={{ padding: "6px 10px", borderRadius: 6, border: `1px solid #ff6b8a40`, background: "#ff6b8a10", color: "#ff6b8a", cursor: "pointer", display: "flex", alignItems: "center" }}>
                       <Trash2 size={13} />
                     </button>
@@ -3382,13 +3516,23 @@ function Footer({ setPage }) {
 
 /* ─────────────────────────── MAIN APP ─────────────────────────── */
 export default function TransformicaWebsite() {
-  const [page, setPage] = useState("home");
+  const [page, setPage] = useState(() =>
+    typeof window !== "undefined" && window.location.hash === "#admin" ? "admin-supplements" : "home"
+  );
   const [testimonials, setTestimonials] = useState([]);
   const [transformations, setTransformations] = useState([]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, [page]);
+
+  useEffect(() => {
+    const onHash = () => {
+      if (window.location.hash === "#admin") setPage("admin-supplements");
+    };
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
 
   const getMetaData = () => {
     const baseUrl = "https://transformica.in";
@@ -3504,7 +3648,7 @@ export default function TransformicaWebsite() {
         {page === "admin-supplements" && <SupplementsAdminPage />}
       </main>
 
-      <WhatsappBubble />
+      {page !== "admin-supplements" && <WhatsappBubble />}
       <Footer setPage={setPage} />
     </>
   );
