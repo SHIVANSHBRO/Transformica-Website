@@ -3681,7 +3681,7 @@ export default function TransformicaWebsite() {
             "@type": "WebApplication",
             "name": "Transformica",
             "description": "Your complete health and fitness ecosystem with AI-powered analytics and human expert guidance.",
-            "url": "https://transformica.com",
+            "url": "https://transformica.in",
             "applicationCategory": "HealthApplication",
             "operatingSystem": "Android, iOS",
             "offers": {
